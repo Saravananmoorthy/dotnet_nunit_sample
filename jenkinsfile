@@ -1,0 +1,29 @@
+node {
+        stage('Fetch Source files'){
+   	        git changelog: false, credentialsId: '8fbd17e8-a7a5-4020-8e05-586f14478584', poll: false, url: 'http://10.155.104.247/preethynair/DemoApplication.git'
+        }
+        stage('Build,Analysis,Test and Coverage'){
+	        bat 'D:\\TrainTools\\NuGet.exe restore DemoApp1.sln'
+	        bat 'D:\\TrainTools\\sonar-scanner-msbuild\\SonarQube.Scanner.MSBuild.exe begin /k:"script" /n:"DemoAppPipeline" /v:'+ env.BUILD_NUMBER +' /d:sonar.host.url=http://tvmatp333574d:9000 /d:sonar.cs.dotcover.reportsPaths="CoverageReport\\AppCoverageReport.html" /d:sonar.cs.nunit.reportsPaths="NUnitResult.xml"' 
+	        bat 'D:\\TrainTools\\MSBuild\\15.0\\Bin\\MSBuild.exe DemoApp1.sln /p:DeployOnBuild=true /p:DeployTarget=Package'
+	        bat 'D:\\TrainTools\\NUnit-2.6.3\\bin\\nunit-console.exe .\\DemoApp1.Tests\\bin\\Debug\\DemoApp1.Tests.dll /result="NUnitResult.xml"'
+	        bat 'D:\\TrainTools\\dotCoverCLI\\dotcover.exe analyse "/TargetExecutable=D:\\TrainTools\\NUnit-2.6.3\\bin\\nunit-console.exe" "/TargetArguments=.\\DemoApp1.Tests\\bin\\Debug\\DemoApp1.Tests.dll"  /Output=".\\CoverageReport\\AppCoverageReport.html" /ReportType="HTML"'
+	        bat 'D:\\TrainTools\\sonar-scanner-msbuild\\SonarQube.Scanner.MSBuild.exe end'
+        }
+        stage('Upload to Nexus'){
+	        bat 'xcopy /s /Y .\\DemoApp1\\obj\\Debug\\Package\\PackageTmp D:\\TrainTools\\outdir\\DemoAppScr_'+env.BUILD_NUMBER+' /I'
+	        bat '"C:\\Program Files\\7-Zip\\7z.exe" a D:\\TrainTools\\outdir\\DemoAppScr_'+env.BUILD_NUMBER+'.zip D:\\TrainTools\\outdir\\DemoAppScr_'+env.BUILD_NUMBER
+            bat 'curl -u admin:admin123 --upload-file D:\\TrainTools\\outdir\\DemoAppScr_'+env.BUILD_NUMBER+'.zip http://tvmatp352691d:8081/nexus/content/repositories/TestRepo/'
+        }
+        stage('Publish Test and Coverage Results'){
+            publishHTML([allowMissing: false, alwaysLinkToLastBuild: false, keepAll: false, reportDir: 'CoverageReport', reportFiles: 'AppCoverageReport.html', reportName: 'CoverageReport', reportTitles: ''])
+            nunit testResultsPattern: '**/NUnitResult.xml'        
+        }    
+        stage('Nexus Download'){
+            bat ' curl -u admin:admin123 http://tvmatp352691d:8081/nexus/content/repositories/TestRepo/DemoAppScr_'+env.BUILD_NUMBER+'.zip  -oDemoAppScr_'+env.BUILD_NUMBER+'.zip'
+        }
+        stage('Deploy to IIS'){
+            bat '"C:\\Program Files\\7-Zip\\7z.exe" x DemoAppScr_'+env.BUILD_NUMBER+'.zip  -y -o.\\'
+            bat 'xcopy /S /Y DemoAppScr_'+env.BUILD_NUMBER+' D:\\TrainTools\\publishfolderscr /I'
+        }
+}
